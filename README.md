@@ -4,26 +4,26 @@ MLSecScan is an advanced web application vulnerability scanner that combines mac
 
 ## Features
 
-- 🔍 **Intelligent Crawling**: Advanced URL discovery with smart filtering and prioritization
-- 🤖 **ML-Based Detection**: Machine learning models for anomaly detection and vulnerability identification
-- 📊 **Real-Time Dashboard**: Live monitoring of scan progress, vulnerabilities, and statistics
-- 🔒 **Comprehensive Testing**: 
+-  **Intelligent Crawling**: Advanced URL discovery with smart filtering and prioritization
+-  **ML-Based Detection**: Machine learning models for anomaly detection and vulnerability identification
+-  **Real-Time Dashboard**: Live monitoring of scan progress, vulnerabilities, and statistics
+-  **Comprehensive Testing**: 
   - SQL Injection detection
   - Cross-Site Scripting (XSS) detection
   - Custom vulnerability signature support
   - Path traversal detection
   - File inclusion vulnerabilities
-- 🛡️ **Security Features**:
+- 🛡 **Security Features**:
   - Tor proxy support for anonymous scanning
   - Rate limiting and request throttling
   - SSL verification options
   - Cookie handling and session management
-- 📈 **Advanced Analytics**:
+-  **Advanced Analytics**:
   - Vulnerability distribution visualization
   - Response time analysis
   - Error rate tracking
   - Custom signature matching
-- 🔄 **Flexible Configuration**:
+-  **Flexible Configuration**:
   - Customizable scan depth
   - Adjustable thread count
   - Configurable timeouts
