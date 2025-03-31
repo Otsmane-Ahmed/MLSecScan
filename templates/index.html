@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MLSecScan Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        body {
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+        .card {
+            background-color: #2d2d2d;
+            border: 1px solid #3d3d3d;
+            margin-bottom: 1rem;
+        }
+        .card-header {
+            background-color: #3d3d3d;
+            border-bottom: 1px solid #4d4d4d;
+        }
+        .progress {
+            background-color: #3d3d3d;
+        }
+        .progress-bar {
+            background-color: #007bff;
+        }
+        .chart-container {
+            height: 300px;
+            margin-bottom: 1rem;
+        }
+        .vulnerability-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .vulnerability-item {
+            padding: 0.5rem;
+            border-bottom: 1px solid #3d3d3d;
+        }
+        .vulnerability-item:last-child {
+            border-bottom: none;
+        }
+        .vulnerability-item:hover {
+            background-color: #3d3d3d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid py-4">
+        <h1 class="mb-4">MLSecScan Dashboard</h1>
+        
+        <!-- Statistics Overview -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Total URLs</h5>
+                        <h2 id="total-urls">0</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Tested URLs</h5>
+                        <h2 id="tested-urls">0</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Total Vulnerabilities</h5>
+                        <h2 id="total-vulnerabilities">0</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Scan Status</h5>
+                        <div class="progress mb-2">
+                            <div id="progress-bar" class="progress-bar" role="progressbar" style="width: 0%"></div>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <small id="progress-text">0%</small>
+                            <div class="d-flex align-items-center gap-2">
+                                <span id="scan-status" class="badge bg-secondary">Waiting</span>
+                                <a id="view-report-btn" href="#" class="btn btn-sm btn-primary" style="display: none;" target="_blank">
+                                    <i class="fas fa-file-alt"></i> View Report
+                                </a>
+                            </div>
+                        </div>
+                        <small id="time-remaining" class="text-muted d-block mt-2">Estimating time...</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Charts -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Vulnerability Distribution</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="vulnerability-distribution" class="chart-container"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Response Times</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="response-times" class="chart-container"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Error Rates</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="error-rates" class="chart-container"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Recent Vulnerabilities</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="vulnerability-list" class="vulnerability-list"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Connect to WebSocket server
+        const socket = io();
+        
+        // Initialize charts
+        let vulnerabilityChart = null;
+        let responseTimesChart = null;
+        let errorRatesChart = null;
+        
+        // Handle connection events
+        socket.on('connect', function() {
+            console.log('Connected to server');
+            document.getElementById('connection-status').textContent = 'Connected';
+            document.getElementById('connection-status').className = 'badge bg-success';
+        });
+        
+        socket.on('disconnect', function() {
+            console.log('Disconnected from server');
+            document.getElementById('connection-status').textContent = 'Disconnected';
+            document.getElementById('connection-status').className = 'badge bg-danger';
+        });
+        
+        socket.on('connect_error', function(error) {
+            console.error('Connection error:', error);
+            document.getElementById('connection-status').textContent = 'Connection Error';
+            document.getElementById('connection-status').className = 'badge bg-warning';
+        });
+        
+        // Handle initial data
+        socket.on('initial_data', function(data) {
+            console.log('Received initial data:', data);
+            updateDashboard(data);
+        });
+        
+        // Handle real-time updates
+        socket.on('update_data', function(data) {
+            console.log('Received update:', data);
+            updateDashboard(data);
+        });
+        
+        function formatTime(seconds) {
+            if (!seconds || seconds <= 0) return 'N/A';
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = Math.floor(seconds % 60);
+            
+            let timeStr = '';
+            if (hours > 0) timeStr += `${hours}h `;
+            if (minutes > 0) timeStr += `${minutes}m `;
+            timeStr += `${secs}s`;
+            return timeStr;
+        }
+
+        function updateScanStatus(status) {
+            const statusBadge = document.getElementById('scan-status');
+            switch(status) {
+                case 'waiting':
+                    statusBadge.className = 'badge bg-secondary';
+                    statusBadge.textContent = 'Waiting';
+                    break;
+                case 'running':
+                    statusBadge.className = 'badge bg-primary';
+                    statusBadge.textContent = 'Running';
+                    break;
+                case 'completed':
+                    statusBadge.className = 'badge bg-success';
+                    statusBadge.textContent = 'Completed';
+                    break;
+                case 'error':
+                    statusBadge.className = 'badge bg-danger';
+                    statusBadge.textContent = 'Error';
+                    break;
+            }
+        }
+
+        function updateDashboard(data) {
+            try {
+                // Update statistics
+                document.getElementById('total-urls').textContent = data.total_urls || 0;
+                document.getElementById('tested-urls').textContent = data.tested_urls || 0;
+                document.getElementById('total-vulnerabilities').textContent = data.vulnerabilities?.length || 0;
+                
+                // Update progress bar and status
+                const progress = data.progress || 0;
+                document.getElementById('progress-bar').style.width = `${progress}%`;
+                document.getElementById('progress-text').textContent = `${Math.round(progress)}%`;
+                
+                // Update scan status and report button
+                const scanStatus = document.getElementById('scan-status');
+                const viewReportBtn = document.getElementById('view-report-btn');
+                const timeRemaining = document.getElementById('time-remaining');
+                
+                // Update status badge
+                scanStatus.className = 'badge ' + getStatusClass(data.scan_status);
+                scanStatus.textContent = capitalizeFirstLetter(data.scan_status);
+                
+                // Handle time remaining
+                if (data.estimated_time_remaining !== null && data.scan_status === 'running') {
+                    timeRemaining.textContent = 'Estimated time remaining: ' + formatTime(data.estimated_time_remaining);
+                } else if (data.scan_status === 'completed') {
+                    timeRemaining.textContent = 'Scan completed';
+                } else {
+                    timeRemaining.textContent = 'Estimated time remaining: --:--:--';
+                }
+                
+                // Show/hide report button when scan completes
+                if (data.scan_status === 'completed' && data.report_path) {
+                    viewReportBtn.style.display = 'inline-block';
+                    viewReportBtn.href = '/report/' + data.report_path;
+                } else {
+                    viewReportBtn.style.display = 'none';
+                }
+                
+                // Update vulnerability distribution chart
+                if (data.vulnerability_distribution && Object.keys(data.vulnerability_distribution).length > 0) {
+                    const vulnData = {
+                        values: Object.values(data.vulnerability_distribution),
+                        labels: Object.keys(data.vulnerability_distribution),
+                        type: 'pie',
+                        marker: {
+                            colors: ['#ff4444', '#ffbb33', '#00C851', '#33b5e5', '#2BBBAD']
+                        }
+                    };
+                    const layout = {
+                        title: 'Vulnerability Distribution',
+                        paper_bgcolor: 'rgba(0,0,0,0)',
+                        plot_bgcolor: 'rgba(0,0,0,0)',
+                        font: { color: '#ffffff' },
+                        showlegend: true,
+                        legend: {
+                            font: { color: '#ffffff' }
+                        }
+                    };
+                    Plotly.newPlot('vulnerability-distribution', [vulnData], layout);
+                }
+                
+                // Update response times chart
+                if (data.response_times && data.response_times.length > 0) {
+                    const responseData = {
+                        y: data.response_times,
+                        type: 'scatter',
+                        mode: 'lines+markers',
+                        name: 'Response Times',
+                        line: { color: '#00C851' },
+                        marker: { color: '#00C851' }
+                    };
+                    const layout = {
+                        title: 'Response Times',
+                        paper_bgcolor: 'rgba(0,0,0,0)',
+                        plot_bgcolor: 'rgba(0,0,0,0)',
+                        font: { color: '#ffffff' },
+                        yaxis: {
+                            title: 'Time (seconds)',
+                            gridcolor: '#3d3d3d'
+                        },
+                        xaxis: {
+                            gridcolor: '#3d3d3d'
+                        }
+                    };
+                    Plotly.newPlot('response-times', [responseData], layout);
+                }
+                
+                // Update error rates chart
+                if (data.error_rates && data.error_rates.length > 0) {
+                    const errorData = {
+                        y: data.error_rates,
+                        type: 'bar',
+                        name: 'Error Rates',
+                        marker: { color: '#ff4444' }
+                    };
+                    const layout = {
+                        title: 'Error Rates',
+                        paper_bgcolor: 'rgba(0,0,0,0)',
+                        plot_bgcolor: 'rgba(0,0,0,0)',
+                        font: { color: '#ffffff' },
+                        yaxis: {
+                            title: 'Error Rate',
+                            gridcolor: '#3d3d3d'
+                        },
+                        xaxis: {
+                            gridcolor: '#3d3d3d'
+                        }
+                    };
+                    Plotly.newPlot('error-rates', [errorData], layout);
+                }
+                
+                // Update vulnerability list
+                const vulnList = document.getElementById('vulnerability-list');
+                vulnList.innerHTML = '';
+                if (data.vulnerabilities && data.vulnerabilities.length > 0) {
+                    data.vulnerabilities.forEach(vuln => {
+                        const item = document.createElement('div');
+                        item.className = 'vulnerability-item';
+                        item.innerHTML = `
+                            <strong>${vuln.type}</strong><br>
+                            URL: ${vuln.url}<br>
+                            Details: ${vuln.details}
+                        `;
+                        vulnList.appendChild(item);
+                    });
+                } else {
+                    vulnList.innerHTML = '<div class="text-center text-muted">No vulnerabilities found yet</div>';
+                }
+            } catch (error) {
+                console.error('Error updating dashboard:', error);
+            }
+        }
+        
+        function getStatusClass(status) {
+            switch (status) {
+                case 'running':
+                    return 'bg-primary';
+                case 'completed':
+                    return 'bg-success';
+                case 'error':
+                    return 'bg-danger';
+                default:
+                    return 'bg-warning';
+            }
+        }
+
+        function capitalizeFirstLetter(string) {
+            return string.charAt(0).toUpperCase() + string.slice(1);
+        }
+        
+        // Add connection status indicator to the header
+        const header = document.querySelector('.container-fluid');
+        const statusDiv = document.createElement('div');
+        statusDiv.className = 'text-end mb-3';
+        statusDiv.innerHTML = `
+            <span class="badge bg-secondary" id="connection-status">Connecting...</span>
+        `;
+        header.insertBefore(statusDiv, header.firstChild);
+    </script>
+</body>
+</html> 
