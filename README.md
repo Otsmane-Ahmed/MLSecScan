@@ -13,7 +13,7 @@ MLSecScan is an advanced web application vulnerability scanner that combines mac
   - Custom vulnerability signature support
   - Path traversal detection
   - File inclusion vulnerabilities
-- 🛡 **Security Features**:
+-  **Security Features**:
   - Tor proxy support for anonymous scanning
   - Rate limiting and request throttling
   - SSL verification options
