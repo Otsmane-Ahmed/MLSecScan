@@ -176,16 +176,9 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Acknowledgments
 
-- Thanks to all contributors
-- Special thanks to the open-source community
-- Built with modern security practices in mind
-
-## Support
-
-For support, please open an issue in the GitHub repository or contact the maintainers.
 
 ## Disclaimer
 
 This tool is for educational and authorized testing purposes only. Users are responsible for ensuring compliance with applicable laws and regulations. 
+**Developed with ❤️ by Otsmane Ahmed**
