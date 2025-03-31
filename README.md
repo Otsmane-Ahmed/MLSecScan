@@ -69,7 +69,7 @@ sudo service tor start
 
 4. Run the scanner:
 ```bash
-python3 xss-sqli-cursor.py --url https://example.com --depth 3 --threads 10
+python3 v8.py --url https://example.com --depth 3 --threads 10
 ```
 
 ## Usage
@@ -77,7 +77,7 @@ python3 xss-sqli-cursor.py --url https://example.com --depth 3 --threads 10
 ### Basic Usage
 
 ```bash
-python3 xss-sqli-cursor.py --url <target_url> [options]
+python3 v8.py --url <target_url> [options]
 ```
 
 ### Command Line Options
@@ -103,22 +103,22 @@ python3 xss-sqli-cursor.py --url <target_url> [options]
 
 1. Basic scan:
 ```bash
-python3 xss-sqli-cursor.py --url https://example.com
+python3 v8.py --url https://example.com
 ```
 
 2. Deep scan with multiple threads:
 ```bash
-python3 xss-sqli-cursor.py --url https://example.com --depth 5 --threads 20
+python3 v8.py --url https://example.com --depth 5 --threads 20
 ```
 
 3. Scan with custom ML model:
 ```bash
-python3 xss-sqli-cursor.py --url https://example.com --ml-model custom_model.joblib
+python3 v8.py --url https://example.com --ml-model custom_model.joblib
 ```
 
 4. Scan multiple URLs from file:
 ```bash
-python3 xss-sqli-cursor.py --file urls.txt --depth 3
+python3 v8.py --file urls.txt --depth 3
 ```
 
 ## Web Dashboard
@@ -151,7 +151,7 @@ The default configuration is stored in `config.json`. You can modify it to custo
 
 Add custom vulnerability signatures using:
 ```bash
-python3 xss-sqli-cursor.py --add-signature "category" "pattern" "description"
+python3 v8.py --add-signature "category" "pattern" "description"
 ```
 
 ## Security Considerations
