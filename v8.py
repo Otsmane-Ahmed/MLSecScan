@@ -1563,7 +1563,7 @@ def generate_html_report(website_name: str):
             </div>
             
             <style>
-                .scan-status-container {
+                .scan-status-container {{
                     display: flex;
                     align-items: center;
                     justify-content: space-between;
@@ -1572,14 +1572,14 @@ def generate_html_report(website_name: str):
                     padding: 20px;
                     margin-bottom: 30px;
                     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-                }
+                }}
                 
-                .progress-section {
+                .progress-section {{
                     flex: 1;
                     margin-right: 20px;
-                }
+                }}
                 
-                .view-results-btn {
+                .view-results-btn {{
                     background-color: var(--primary-color);
                     color: white;
                     border: none;
@@ -1589,20 +1589,20 @@ def generate_html_report(website_name: str):
                     cursor: pointer;
                     transition: all 0.3s ease;
                     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-                }
+                }}
                 
-                .view-results-btn:hover {
+                .view-results-btn:hover {{
                     transform: translateY(-2px);
                     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-                }
+                }}
                 
-                .view-results-btn:active {
+                .view-results-btn:active {{
                     transform: translateY(0);
-                }
+                }}
                 
-                .vulnerability-section {
+                .vulnerability-section {{
                     scroll-margin-top: 20px;
-                }
+                }}
             </style>
             
             <div class="chart-container">
