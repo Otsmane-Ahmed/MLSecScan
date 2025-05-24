@@ -248,30 +248,8 @@ python3 v8.py --add-signature "category" "pattern" "description"
 - Monitor system resource usage
 - Implement proper error handling
 - Use secure configurations
-
-## Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-### Development Guidelines
-- Follow PEP 8 style guide
-- Write clear commit messages
-- Add appropriate documentation
-- Include test cases
-- Update the README if needed
-
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Disclaimer
-
-This tool is for educational and authorized testing purposes only. Users are responsible for ensuring compliance with applicable laws and regulations. The developers are not responsible for any misuse or damage caused by this tool.
 
 Developed by Otsmane Ahmed
