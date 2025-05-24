@@ -38,6 +38,7 @@ from flask_socketio import SocketIO, emit
 import plotly.graph_objects as go
 import plotly.express as px
 from threading import Thread
+import gc
 
 # Suppress only the single warning from urllib3 needed.
 requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
@@ -850,71 +851,160 @@ def get_random_user_agent() -> str:
 
 def make_request(url: str, method: str = "GET", **kwargs) -> Optional[requests.Response]:
     """Make an HTTP request with rate limiting and error handling."""
-    global training_data  # Use the global training_data list
+    global training_data
     
     if session_manager.should_skip_url(url):
         logger.warning(f"Skipping {url} due to too many errors")
         return None
 
-    rate_limiter.wait()
-    session = session_manager.get_session()
+    # Add exponential backoff for retries
+    max_retries = 5
+    retry_delay = 1
     
-    try:
-        if "headers" not in kwargs:
-            kwargs["headers"] = {}
-        kwargs["headers"]["User-Agent"] = get_random_user_agent()
-        kwargs["timeout"] = config.config["timeout"]
-        
-        start_time = time.time()
-        response = session.request(method, url, **kwargs)
-        elapsed_time = time.time() - start_time
-        response.raise_for_status()
-        
-        # Collect training data for anomaly detection
-        # Only collect during initial crawl (no payloads in URL)
-        if (hasattr(response, 'text') and 
-            'text/html' in response.headers.get('Content-Type', '').lower() and
-            not any(payload in url for payload in PAYLOADS["SQLi"] + PAYLOADS["XSS"]) and
-            not any(payload in str(kwargs.get('data', '')) for payload in PAYLOADS["SQLi"] + PAYLOADS["XSS"])):
-            training_data.append((response, elapsed_time))
-            logger.debug(f"Collected baseline data from {url}")
-        
-        return response
-    except requests.exceptions.RequestException as e:
-        session_manager.increment_error_count(url)
-        logger.error(f"Request failed for {url}: {e}")
-        return None
+    for attempt in range(max_retries):
+        try:
+            rate_limiter.wait()
+            session = session_manager.get_session()
+            
+            if "headers" not in kwargs:
+                kwargs["headers"] = {}
+            kwargs["headers"]["User-Agent"] = get_random_user_agent()
+            kwargs["timeout"] = config.config["timeout"]
+            
+            start_time = time.time()
+            response = session.request(method, url, **kwargs)
+            elapsed_time = time.time() - start_time
+            
+            # Handle rate limiting
+            if response.status_code == 429:
+                retry_after = int(response.headers.get('Retry-After', retry_delay))
+                logger.warning(f"Rate limited. Waiting {retry_after} seconds...")
+                time.sleep(retry_after)
+                continue
+                
+            # Handle server errors
+            if response.status_code >= 500:
+                retry_delay *= 2  # Exponential backoff
+                logger.warning(f"Server error {response.status_code}. Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+                continue
+                
+            response.raise_for_status()
+            
+            # Collect training data for anomaly detection
+            if (hasattr(response, 'text') and 
+                'text/html' in response.headers.get('Content-Type', '').lower() and
+                not any(payload in url for payload in PAYLOADS["SQLi"] + PAYLOADS["XSS"]) and
+                not any(payload in str(kwargs.get('data', '')) for payload in PAYLOADS["SQLi"] + PAYLOADS["XSS"])):
+                training_data.append((response, elapsed_time))
+                logger.debug(f"Collected baseline data from {url}")
+            
+            return response
+            
+        except requests.exceptions.RequestException as e:
+            session_manager.increment_error_count(url)
+            logger.error(f"Request failed for {url} (Attempt {attempt + 1}/{max_retries}): {e}")
+            
+            if attempt < max_retries - 1:
+                retry_delay *= 2  # Exponential backoff
+                time.sleep(retry_delay)
+            else:
+                logger.error(f"Max retries exceeded for {url}")
+                return None
+    
+    return None
 
 def crawl(start_url: str, max_depth: int = 2) -> List[str]:
-    """Crawl the website to find all internal links with improved error handling."""
+    """Crawl the website to find all internal links with improved error handling and memory management."""
     visited = set()
     queue = deque([(start_url, 0)])
     links = []
     session = session_manager.get_session()
     
+    # File extensions to skip
+    skip_extensions = {'.pdf', '.jpg', '.jpeg', '.png', '.gif', '.zip', '.rar', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'}
+    
+    # Keep track of failed URLs for retry
+    failed_urls = set()
+    max_retries = 3
+    
     with tqdm(desc="Crawling URLs", unit="url") as pbar:
         while queue:
             url, depth = queue.popleft()
+            
+            # Skip if already visited or max depth reached
             if url in visited or depth > max_depth:
                 continue
+                
+            # Skip URLs with file extensions we don't want to process
+            if any(url.lower().endswith(ext) for ext in skip_extensions):
+                continue
+                
             visited.add(url)
             
-            try:
-                response = make_request(url)
-                if not response:
-                    continue
+            # Try to crawl the URL with retries
+            for attempt in range(max_retries):
+                try:
+                    # Add delay between requests to prevent overwhelming the server
+                    time.sleep(1)  # Increased delay
                     
-                soup = BeautifulSoup(response.text, 'html.parser')
-                for link in soup.find_all('a', href=True):
-                    full_url = urllib.parse.urljoin(url, link['href'])
-                    if full_url.startswith(start_url) and full_url not in visited:
-                        queue.append((full_url, depth + 1))
-                        links.append(full_url)
-                        logger.debug(f"Found link: {full_url}")
-            except Exception as e:
-                logger.error(f"Failed to crawl {url}: {e}")
-            finally:
-                pbar.update(1)
+                    response = make_request(url)
+                    if not response:
+                        if attempt < max_retries - 1:
+                            failed_urls.add((url, depth))
+                            continue
+                        break
+                        
+                    # Skip if content type is not HTML
+                    content_type = response.headers.get('Content-Type', '').lower()
+                    if 'text/html' not in content_type:
+                        break
+                        
+                    # Limit content size to prevent memory issues
+                    if len(response.text) > 1000000:  # Skip if content is larger than 1MB
+                        logger.warning(f"Skipping large content from {url}")
+                        break
+                        
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    for link in soup.find_all('a', href=True):
+                        full_url = urllib.parse.urljoin(url, link['href'])
+                        
+                        # Skip external links and non-HTTP(S) URLs
+                        if not full_url.startswith(start_url) or not full_url.startswith(('http://', 'https://')):
+                            continue
+                            
+                        # Skip URLs with file extensions we don't want to process
+                        if any(full_url.lower().endswith(ext) for ext in skip_extensions):
+                            continue
+                            
+                        if full_url not in visited:
+                            queue.append((full_url, depth + 1))
+                            links.append(full_url)
+                            logger.debug(f"Found link: {full_url}")
+                            
+                    # Clear soup to free memory
+                    soup.decompose()
+                    break  # Success, exit retry loop
+                    
+                except Exception as e:
+                    logger.error(f"Failed to crawl {url} (Attempt {attempt + 1}/{max_retries}): {e}")
+                    if attempt < max_retries - 1:
+                        time.sleep(2 ** attempt)  # Exponential backoff
+                    else:
+                        failed_urls.add((url, depth))
+                finally:
+                    pbar.update(1)
+                    
+            # Periodically clear memory
+            if len(visited) % 50 == 0:  # More frequent garbage collection
+                gc.collect()
+                
+            # Retry failed URLs periodically
+            if len(failed_urls) >= 10 or (not queue and failed_urls):
+                logger.info(f"Retrying {len(failed_urls)} failed URLs")
+                for failed_url, failed_depth in failed_urls:
+                    queue.append((failed_url, failed_depth))
+                failed_urls.clear()
     
     return links
 
@@ -1308,7 +1398,7 @@ async def run_scan(links):
                 logger.error(f"Error canceling progress task: {e}")
 
 def generate_html_report(website_name: str):
-    """Generate an HTML report that matches the web UI data."""
+    """Generate an HTML report that matches the web UI data with sorted vulnerabilities."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     report_file = f"reports/{website_name}_report_{timestamp}.html"
     
@@ -1321,6 +1411,26 @@ def generate_html_report(website_name: str):
     # Calculate statistics
     total_vulns = len(scan_data['vulnerabilities'])
     vuln_types = scan_data['vulnerability_distribution']
+    
+    # Organize vulnerabilities by parameter
+    vuln_by_param = defaultdict(lambda: defaultdict(list))
+    for vuln in scan_data['vulnerabilities']:
+        param = vuln['details'].split(': ')[-1] if ': ' in vuln['details'] else 'Unknown'
+        vuln_by_param[vuln['type']][param].append(vuln)
+    
+    # Sort vulnerabilities by count
+    sorted_vulns = []
+    for vuln_type, params in vuln_by_param.items():
+        for param, vulns in params.items():
+            sorted_vulns.append({
+                'type': vuln_type,
+                'param': param,
+                'count': len(vulns),
+                'vulns': vulns
+            })
+    
+    # Sort by vulnerability count (descending)
+    sorted_vulns.sort(key=lambda x: x['count'], reverse=True)
     
     html_content = f"""
     <!DOCTYPE html>
@@ -1384,11 +1494,6 @@ def generate_html_report(website_name: str):
                 opacity: 0.9;
             }}
             
-            .header p {{
-                color: var(--text-color);
-                opacity: 0.7;
-            }}
-            
             .stats-grid {{
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -1402,11 +1507,6 @@ def generate_html_report(website_name: str):
                 padding: 20px;
                 text-align: center;
                 box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-                transition: transform 0.3s ease;
-            }}
-            
-            .stat-card:hover {{
-                transform: translateY(-5px);
             }}
             
             .stat-number {{
@@ -1416,10 +1516,63 @@ def generate_html_report(website_name: str):
                 color: var(--primary-color);
             }}
             
-            .stat-label {{
-                font-size: 1.1em;
-                color: var(--text-color);
-                opacity: 0.8;
+            .vulnerability-section {{
+                background-color: var(--card-bg);
+                border-radius: 10px;
+                padding: 20px;
+                margin-bottom: 30px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            }}
+            
+            .vulnerability-type {{
+                color: var(--danger-color);
+                font-size: 1.5em;
+                margin-bottom: 20px;
+                padding-bottom: 10px;
+                border-bottom: 2px solid var(--border-color);
+            }}
+            
+            .parameter-section {{
+                margin-bottom: 30px;
+                padding: 15px;
+                background-color: rgba(244, 67, 54, 0.1);
+                border-radius: 8px;
+            }}
+            
+            .parameter-header {{
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 15px;
+            }}
+            
+            .parameter-name {{
+                font-size: 1.2em;
+                color: var(--warning-color);
+            }}
+            
+            .parameter-count {{
+                background-color: var(--danger-color);
+                color: white;
+                padding: 5px 10px;
+                border-radius: 15px;
+                font-weight: bold;
+            }}
+            
+            .vulnerability-item {{
+                background-color: rgba(0, 0, 0, 0.2);
+                border-left: 4px solid var(--danger-color);
+                padding: 15px;
+                margin-bottom: 10px;
+                border-radius: 4px;
+            }}
+            
+            .vulnerability-url {{
+                color: var(--primary-color);
+                word-break: break-all;
+                font-family: monospace;
+                font-size: 0.9em;
+                margin-top: 5px;
             }}
             
             .chart-container {{
@@ -1434,97 +1587,6 @@ def generate_html_report(website_name: str):
                 font-size: 1.5em;
                 margin-bottom: 20px;
                 color: var(--text-color);
-                opacity: 0.9;
-            }}
-            
-            .vulnerability-section {{
-                background-color: var(--card-bg);
-                border-radius: 10px;
-                padding: 20px;
-                margin-bottom: 30px;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            }}
-            
-            .vulnerability-section h2 {{
-                color: var(--text-color);
-                font-size: 1.8em;
-                margin-bottom: 20px;
-                opacity: 0.9;
-            }}
-            
-            .vulnerability-grid {{
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-                gap: 20px;
-            }}
-            
-            .vulnerability-card {{
-                background-color: rgba(244, 67, 54, 0.1);
-                border-left: 4px solid var(--danger-color);
-                border-radius: 5px;
-                padding: 15px;
-                transition: transform 0.3s ease;
-            }}
-            
-            .vulnerability-card:hover {{
-                transform: translateX(5px);
-            }}
-            
-            .vulnerability-type {{
-                color: var(--danger-color);
-                font-weight: bold;
-                font-size: 1.1em;
-                margin-bottom: 10px;
-            }}
-            
-            .vulnerability-details {{
-                color: var(--text-color);
-                opacity: 0.8;
-                margin-bottom: 5px;
-            }}
-            
-            .vulnerability-url {{
-                color: var(--primary-color);
-                word-break: break-all;
-                font-family: monospace;
-                font-size: 0.9em;
-            }}
-            
-            .progress-section {{
-                background-color: var(--card-bg);
-                border-radius: 10px;
-                padding: 20px;
-                margin-bottom: 30px;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            }}
-            
-            .progress-bar {{
-                height: 20px;
-                background-color: rgba(33, 150, 243, 0.1);
-                border-radius: 10px;
-                overflow: hidden;
-                margin-top: 10px;
-            }}
-            
-            .progress-fill {{
-                height: 100%;
-                background-color: var(--primary-color);
-                width: {scan_data['progress']}%;
-                transition: width 0.3s ease;
-            }}
-            
-            @media (max-width: 768px) {{
-                .container {{
-                    padding: 10px;
-                }}
-                
-                .stat-card {{
-                    padding: 15px;
-                }}
-                
-                .vulnerability-grid {{
-                    grid-template-columns: 1fr;
-                }}
             }}
         </style>
     </head>
@@ -1551,142 +1613,65 @@ def generate_html_report(website_name: str):
                 </div>
             </div>
             
-            <div class="scan-status-container">
-                <div class="progress-section">
-                    <h2 class="chart-title">Scan Progress</h2>
-                    <div class="progress-bar">
-                        <div class="progress-fill" style="width: {scan_data['progress']}%;"></div>
-                    </div>
-                    <p style="margin-top: 10px; text-align: center;">{scan_data['progress']:.1f}% Complete</p>
-                </div>
-                <button id="viewResultsBtn" class="view-results-btn" onclick="scrollToResults()">View Results</button>
-            </div>
-            
-            <style>
-                .scan-status-container {{
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    background-color: var(--card-bg);
-                    border-radius: 10px;
-                    padding: 20px;
-                    margin-bottom: 30px;
-                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-                }}
-                
-                .progress-section {{
-                    flex: 1;
-                    margin-right: 20px;
-                }}
-                
-                .view-results-btn {{
-                    background-color: var(--primary-color);
-                    color: white;
-                    border: none;
-                    border-radius: 5px;
-                    padding: 10px 20px;
-                    font-size: 1.1em;
-                    cursor: pointer;
-                    transition: all 0.3s ease;
-                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-                }}
-                
-                .view-results-btn:hover {{
-                    transform: translateY(-2px);
-                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-                }}
-                
-                .view-results-btn:active {{
-                    transform: translateY(0);
-                }}
-                
-                .vulnerability-section {{
-                    scroll-margin-top: 20px;
-                }}
-            </style>
-            
             <div class="chart-container">
                 <h2 class="chart-title">Vulnerability Distribution</h2>
                 <div id="vulnerability-distribution"></div>
             </div>
             
-            <div class="chart-container">
-                <h2 class="chart-title">Response Times</h2>
-                <div id="response-times"></div>
-            </div>
-            
-            <div id="vulnerabilities" class="vulnerability-section">
-                <h2>Detected Vulnerabilities</h2>
-                <div class="vulnerability-grid">
+            <div class="vulnerability-section">
+                <h2>Detailed Vulnerability Report</h2>
     """
     
-    # Add vulnerabilities from scan_data
-    for vuln in scan_data['vulnerabilities']:
+    # Add sorted vulnerabilities
+    for vuln_group in sorted_vulns:
         html_content += f"""
-                    <div class="vulnerability-card">
-                        <div class="vulnerability-type">{vuln['type']}</div>
+                <div class="vulnerability-type">{vuln_group['type']}</div>
+                <div class="parameter-section">
+                    <div class="parameter-header">
+                        <div class="parameter-name">Parameter: {vuln_group['param']}</div>
+                        <div class="parameter-count">{vuln_group['count']} vulnerabilities</div>
+                    </div>
+        """
+        
+        for vuln in vuln_group['vulns']:
+            html_content += f"""
+                    <div class="vulnerability-item">
                         <div class="vulnerability-details">{vuln['details']}</div>
                         <div class="vulnerability-url">{vuln['url']}</div>
                     </div>
+            """
+        
+        html_content += """
+                </div>
         """
     
     html_content += """
-                </div>
             </div>
         </div>
         
         <script>
-            // Add scroll to results function
-            function scrollToResults() {
-                document.getElementById('vulnerabilities').scrollIntoView({ 
-                    behavior: 'smooth',
-                    block: 'start'
-                });
-            }
-            
             // Vulnerability Distribution Chart
             const vulnDist = document.getElementById('vulnerability-distribution');
-            const vulnData = {{
-                labels: {json.dumps(vuln_types)},
-                values: {json.dumps(vuln_counts)},
+            const vulnData = {
+                values: """ + json.dumps(list(vuln_types.values())) + """,
+                labels: """ + json.dumps(list(vuln_types.keys())) + """,
                 type: 'pie',
                 textinfo: 'label+percent',
                 insidetextorientation: 'radial',
-                marker: {{
+                marker: {
                     colors: ['#F44336', '#2196F3', '#4CAF50', '#FFC107', '#9C27B0']
-                }}
-            }};
+                }
+            };
             
-            const vulnLayout = {{
+            const vulnLayout = {
                 paper_bgcolor: '#2d2d2d',
                 plot_bgcolor: '#2d2d2d',
-                font: {{ color: '#ffffff' }},
+                font: { color: '#ffffff' },
                 showlegend: true,
-                legend: {{ orientation: 'h', y: -0.2 }}
-            }};
+                legend: { orientation: 'h', y: -0.2 }
+            };
             
             Plotly.newPlot('vulnerability-distribution', [vulnData], vulnLayout);
-            
-            // Response Times Chart
-            const respTimes = document.getElementById('response-times');
-            const timeData = {{
-                y: {json.dumps(scan_data['response_times'])},
-                type: 'scatter',
-                mode: 'lines+markers',
-                line: {{ color: '#2196F3' }},
-                marker: {{ color: '#2196F3' }}
-            }};
-            
-            const timeLayout = {{
-                paper_bgcolor: '#2d2d2d',
-                plot_bgcolor: '#2d2d2d',
-                font: {{ color: '#ffffff' }},
-                title: {{ text: 'Response Times (seconds)', font: {{ color: '#ffffff' }} }},
-                xaxis: {{ title: 'Request Number', gridcolor: '#404040', color: '#ffffff' }},
-                yaxis: {{ title: 'Response Time (s)', gridcolor: '#404040', color: '#ffffff' }}
-            }};
-            
-            Plotly.newPlot('response-times', [timeData], timeLayout);
         </script>
     </body>
     </html>
@@ -1699,36 +1684,58 @@ def generate_html_report(website_name: str):
     return report_file
 
 def test_links(links: List[str]):
-    """Test vulnerabilities in all crawled links with improved threading."""
+    """Test vulnerabilities in all crawled links with improved threading and memory management."""
     global training_data, response_analyzer, ml_detector, tested_urls, current_url
     
     # Use set for links to ensure uniqueness
     unique_links = list(set(links))
     total_links = len(unique_links)
     
-    # Train the model with baseline data before testing
-    if training_data:
-        logger.info(f"Training anomaly detection model with {len(training_data)} baseline samples")
-        response_analyzer.train(training_data)
-    else:
-        logger.warning("No baseline data collected for anomaly detection model")
+    # Process links in smaller batches to manage memory better
+    batch_size = 10  # Reduced batch size
+    max_retries = 5  # Maximum number of retries for failed URLs
     
-    with concurrent.futures.ThreadPoolExecutor(max_workers=config.config["max_threads"]) as executor:
-        futures = []
-        for url in unique_links:
-            if config.config["scan_options"]["test_sqli"]:
-                futures.append(executor.submit(test_sqli, url))
-            if config.config["scan_options"]["test_xss"]:
-                futures.append(executor.submit(test_xss, url))
+    # Keep track of failed URLs for retry
+    failed_urls = set()
+    
+    for i in range(0, total_links, batch_size):
+        batch_links = unique_links[i:i + batch_size]
+        retry_count = 0
         
-        with tqdm(total=len(futures), desc="Testing URLs", unit="url") as pbar:
-            for future in concurrent.futures.as_completed(futures):
-                try:
-                    future.result()
-                except Exception as e:
-                    logger.error(f"Error during vulnerability testing: {e}")
-                finally:
-                    pbar.update(1)
+        while retry_count < max_retries and batch_links:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, config.config["max_threads"])) as executor:
+                futures = []
+                for url in batch_links:
+                    if config.config["scan_options"]["test_sqli"]:
+                        futures.append(executor.submit(test_sqli, url))
+                    if config.config["scan_options"]["test_xss"]:
+                        futures.append(executor.submit(test_xss, url))
+                
+                with tqdm(total=len(futures), desc=f"Testing URLs batch {i//batch_size + 1}/{(total_links + batch_size - 1)//batch_size} (Attempt {retry_count + 1})", unit="url") as pbar:
+                    for future in concurrent.futures.as_completed(futures):
+                        try:
+                            future.result()
+                        except Exception as e:
+                            logger.error(f"Error during vulnerability testing: {e}")
+                            # Add URL to failed set for retry
+                            failed_urls.add(url)
+                        finally:
+                            pbar.update(1)
+            
+            # Clear memory after each batch
+            gc.collect()
+            
+            # Add a longer delay between batches
+            time.sleep(5)
+            
+            # If we have failed URLs, retry them
+            if failed_urls:
+                logger.info(f"Retrying {len(failed_urls)} failed URLs (Attempt {retry_count + 1})")
+                batch_links = list(failed_urls)
+                failed_urls.clear()
+                retry_count += 1
+            else:
+                break
     
     # Ensure all URLs are marked as tested
     tested_urls.update(unique_links)
