@@ -2,62 +2,99 @@
 
 MLSecScan is an advanced web application vulnerability scanner that combines machine learning with traditional security testing techniques. It provides real-time scanning capabilities, intelligent vulnerability detection, and a modern web dashboard for monitoring scan progress and results.
 
+## Table of Contents
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Usage](#usage)
+- [Web Dashboard](#web-dashboard)
+- [Configuration](#configuration)
+- [Security Considerations](#security-considerations)
+- [Contributing](#contributing)
+- [License](#license)
+- [Disclaimer](#disclaimer)
+
 ## Features
 
--  **Intelligent Crawling**: Advanced URL discovery with smart filtering and prioritization
--  **ML-Based Detection**: Machine learning models for anomaly detection and vulnerability identification
--  **Real-Time Dashboard**: Live monitoring of scan progress, vulnerabilities, and statistics
--  **Comprehensive Testing**: 
+### Core Capabilities
+- **Intelligent Crawling**
+  - Advanced URL discovery
+  - Smart filtering and prioritization
+  - Depth-controlled crawling
+  - Resource-aware scanning
+
+- **ML-Based Detection**
+  - Anomaly detection models
+  - Pattern recognition
+  - Adaptive learning
+  - False positive reduction
+
+- **Real-Time Dashboard**
+  - Live progress monitoring
+  - Interactive statistics
+  - Dynamic vulnerability updates
+  - Performance metrics
+
+### Security Testing
+- **Comprehensive Testing**
   - SQL Injection detection
+    - Error-based detection
+    - Time-based detection
+    - Boolean/Union-based detection
   - Cross-Site Scripting (XSS) detection
   - Custom vulnerability signature support
   - Path traversal detection
   - File inclusion vulnerabilities
--  **Security Features**:
+
+- **Security Features**
   - Tor proxy support for anonymous scanning
   - Rate limiting and request throttling
   - SSL verification options
   - Cookie handling and session management
--  **Advanced Analytics**:
+  - Request randomization
+  - User-agent rotation
+
+### Analytics and Reporting
+- **Advanced Analytics**
   - Vulnerability distribution visualization
   - Response time analysis
   - Error rate tracking
   - Custom signature matching
   - Parameter-based vulnerability grouping
   - Sorted vulnerability reporting
--  **Flexible Configuration**:
-  - Customizable scan depth
-  - Adjustable thread count
-  - Configurable timeouts
-  - Custom payload support
--  **Enhanced Reporting**:
+
+- **Enhanced Reporting**
   - Parameter-based vulnerability organization
   - Sorted vulnerability counts by parameter
   - Detailed vulnerability grouping
   - Interactive vulnerability charts
   - Exportable HTML reports
+  - Customizable report formats
+
+### Configuration Options
+- **Flexible Configuration**
+  - Customizable scan depth
+  - Adjustable thread count
+  - Configurable timeouts
+  - Custom payload support
+  - Memory usage optimization
+  - Batch processing options
 
 ## Installation
 
 ### Prerequisites
-
 - Python 3.8 or higher
 - Tor service (optional, for anonymous scanning)
 - Git
-
-### Dependencies
-
-```bash
-pip install -r requirements.txt
-```
+- pip (Python package manager)
 
 ### System Requirements
-
 - Linux/Unix-based system (recommended)
 - Minimum 4GB RAM
 - 2GB free disk space
+- Network connectivity
 
-## Quick Start
+### Installation Steps
 
 1. Clone the repository:
 ```bash
@@ -75,41 +112,50 @@ pip install -r requirements.txt
 sudo service tor start
 ```
 
-4. Run the scanner:
+## Quick Start
+
+Run a basic scan:
 ```bash
 python3 v8.py --url https://example.com --depth 3 --threads 10
 ```
 
+Access the dashboard at `http://localhost:5000` to monitor the scan progress.
+
 ## Usage
 
 ### Basic Usage
-
 ```bash
 python3 v8.py --url <target_url> [options]
 ```
 
 ### Command Line Options
 
+#### Essential Options
 - `--url`: Target URL to scan
 - `--file`: File containing URLs to scan
 - `--depth`: Maximum crawl depth (default: 2)
 - `--threads`: Number of concurrent threads (default: 3)
+
+#### Security Options
 - `--no-tor`: Disable Tor proxy
 - `--verify-ssl`: Enable SSL verification
-- `--output-dir`: Directory for output files
 - `--max-errors`: Maximum errors per URL before skipping (default: 5)
+
+#### Output Options
+- `--output-dir`: Directory for output files
+- `--custom-config`: Path to custom configuration file
+
+#### ML Options
 - `--ml-model`: Path to custom ML model file
 - `--no-ml`: Disable ML-based detection
 
 ### Advanced Options
-
 - `--add-signature`: Add custom vulnerability signature
 - `--list-signatures`: List all custom signatures
-- `--custom-config`: Path to custom configuration file
 
-### Examples
+### Usage Examples
 
-1. Basic scan:
+1. Basic scan with default settings:
 ```bash
 python3 v8.py --url https://example.com
 ```
@@ -136,7 +182,7 @@ The web dashboard provides real-time monitoring of the scan progress and results
 http://localhost:5000
 ```
 
-Features:
+### Dashboard Features
 - Live progress tracking
 - Vulnerability statistics
 - Response time analysis
@@ -149,23 +195,37 @@ Features:
 
 ### Enhanced Reporting Features
 
-The scanner now provides enhanced reporting capabilities with parameter-based organization:
+The scanner provides comprehensive reporting capabilities:
 
-- **Parameter-Based Grouping**: Vulnerabilities are grouped by their parameters for better analysis
-- **Sorted Vulnerability Counts**: Results are sorted by vulnerability count for quick identification of critical issues
-- **Detailed Vulnerability Information**: Each vulnerability includes:
+- **Parameter-Based Grouping**
+  - Vulnerabilities grouped by parameters
+  - Hierarchical organization
+  - Quick identification of critical issues
+
+- **Detailed Vulnerability Information**
   - Parameter name
   - Vulnerability type
   - Affected URL
   - Detailed description
-- **Interactive Charts**: Visual representation of vulnerability distribution
-- **Exportable Reports**: Generate comprehensive HTML reports with all findings
+  - Severity level
+  - Remediation suggestions
+
+- **Interactive Visualization**
+  - Vulnerability distribution charts
+  - Response time graphs
+  - Error rate analysis
+  - Custom chart generation
+
+- **Export Options**
+  - HTML report generation
+  - Custom report formats
+  - Data export capabilities
+  - Report customization
 
 ## Configuration
 
 ### Default Configuration
-
-The default configuration is stored in `config.json`. You can modify it to customize:
+The default configuration is stored in `config.json`. You can modify:
 - Scan parameters
 - ML model settings
 - Dashboard options
@@ -173,8 +233,7 @@ The default configuration is stored in `config.json`. You can modify it to custo
 - Rate limiting rules
 
 ### Custom Signatures
-
-Add custom vulnerability signatures using:
+Add custom vulnerability signatures:
 ```bash
 python3 v8.py --add-signature "category" "pattern" "description"
 ```
@@ -186,10 +245,13 @@ python3 v8.py --add-signature "category" "pattern" "description"
 - Consider rate limiting and resource usage
 - Follow security best practices
 - Keep the tool and dependencies updated
+- Monitor system resource usage
+- Implement proper error handling
+- Use secure configurations
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please follow these steps:
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
@@ -197,13 +259,19 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
+### Development Guidelines
+- Follow PEP 8 style guide
+- Write clear commit messages
+- Add appropriate documentation
+- Include test cases
+- Update the README if needed
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-
-
 ## Disclaimer
 
-This tool is for educational and authorized testing purposes only. Users are responsible for ensuring compliance with applicable laws and regulations. 
-**Developed with ❤️ by Otsmane Ahmed**
+This tool is for educational and authorized testing purposes only. Users are responsible for ensuring compliance with applicable laws and regulations. The developers are not responsible for any misuse or damage caused by this tool.
+
+Developed by Otsmane Ahmed
