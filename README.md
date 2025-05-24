@@ -23,11 +23,19 @@ MLSecScan is an advanced web application vulnerability scanner that combines mac
   - Response time analysis
   - Error rate tracking
   - Custom signature matching
+  - Parameter-based vulnerability grouping
+  - Sorted vulnerability reporting
 -  **Flexible Configuration**:
   - Customizable scan depth
   - Adjustable thread count
   - Configurable timeouts
   - Custom payload support
+-  **Enhanced Reporting**:
+  - Parameter-based vulnerability organization
+  - Sorted vulnerability counts by parameter
+  - Detailed vulnerability grouping
+  - Interactive vulnerability charts
+  - Exportable HTML reports
 
 ## Installation
 
@@ -135,6 +143,23 @@ Features:
 - Error rate monitoring
 - Interactive charts
 - Export capabilities
+- Parameter-based vulnerability grouping
+- Sorted vulnerability counts
+- Detailed vulnerability reports
+
+### Enhanced Reporting Features
+
+The scanner now provides enhanced reporting capabilities with parameter-based organization:
+
+- **Parameter-Based Grouping**: Vulnerabilities are grouped by their parameters for better analysis
+- **Sorted Vulnerability Counts**: Results are sorted by vulnerability count for quick identification of critical issues
+- **Detailed Vulnerability Information**: Each vulnerability includes:
+  - Parameter name
+  - Vulnerability type
+  - Affected URL
+  - Detailed description
+- **Interactive Charts**: Visual representation of vulnerability distribution
+- **Exportable Reports**: Generate comprehensive HTML reports with all findings
 
 ## Configuration
 
